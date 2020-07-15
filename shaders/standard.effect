@@ -262,6 +262,7 @@ CCProgram standard-fs %{
 
   #if USE_SHADOW
     #include <./chunks/packing>
+    #include <./chunks/lit-shadow>
 
     in vec4 v_posLightSpace;
     in float v_depth;
@@ -269,7 +270,8 @@ CCProgram standard-fs %{
     uniform sampler2D sl_shadowMap;
 
     float getDepth(sampler2D shadowMap, vec2 shadowUV) {
-      return unpackRGBAToDepth(texture(shadowMap, shadowUV));
+      float depth = unpackRGBAToDepth(texture(shadowMap, shadowUV));
+      return depth;
     }
 
     float computeFallOff(float shadow, vec2 coords, float frustumEdgeFalloff) {
@@ -306,14 +308,8 @@ CCProgram standard-fs %{
 
     #if USE_SHADOW
       vec2 shadowUv = (v_posLightSpace.xy / v_posLightSpace.w) * 0.5 + 0.5;
-      float shadowDepth = unpackRGBAToDepth(texture(sl_shadowMap, shadowUv));
       float currentDepth = clamp(v_depth, 0.0, 1.0);
-      // color.rgb *= shadowSimple(sl_shadowMap, shadowUv, currentDepth, 0.5);
-
-      color.rgb *= shadowDepth;
-
-      // color.rgb *= currentDepth;
-      // color.rgb = vec3(currentDepth);
+      color.rgb *= shadowSimple(sl_shadowMap, shadowUv, currentDepth, sl_litShadowParams.w);
     #endif
 
     return CCFragOutput(color);

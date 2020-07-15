@@ -35,6 +35,7 @@ function _computeDirectionalLightViewProjMatrix (light: renderer.Light, min = 0.
     // min = min || light._shadowMinDepth;
     // max = max || light._shadowMaxDepth;
     Mat4.ortho(_projMat, -halfSize, halfSize, -halfSize, halfSize, min, max);
+    // Mat4.perspective(_projMat, 60, 1, min, max);
 
     Mat4.multiply(_viewProjMat, _projMat, _viewMat);
     return _viewProjMat;
@@ -47,6 +48,8 @@ export class ShadowMapStage extends RenderStage {
     _psos: GFXPipelineState[] = []
 
     _shadowMap: ShadowMap = null;
+
+    _shadowComponent: ShadowComponent = null;
 
     public activate (flow: RenderFlow) {
         super.activate(flow);
@@ -73,43 +76,46 @@ export class ShadowMapStage extends RenderStage {
         for (let i = 0; i < renderObjects.length; ++i) {
             const ro = renderObjects[i];
             const model = ro.model;
-            // const modelComp = model.node.getComponent(ModelComponent);
-            // const receiveShadow = modelComp.lightmapSettings.receiveShadow;
-            // const castShadow = modelComp.lightmapSettings.castShadow;
+            const modelComp = model.node.getComponent(ModelComponent);
+            const receiveShadow = modelComp.lightmapSettings.receiveShadow;
+            const castShadow = modelComp.lightmapSettings.castShadow;
+
             for (let l = 0; l < model.subModelNum; l++) {
                 let passes = model.getSubModel(l).passes;
                 for (let j = 0; j < passes.length; j++) {
                     for (let k = 0; k < this._renderQueues.length; k++) {
                         let updated = false;
 
+                        if (castShadow) {
+                            this._renderQueues[k].insertRenderPass(ro, l, j)
+                        }
+
                         const subModel = model.getSubModel(l);
                         const pass: renderer.Pass = subModel.passes[j];
-
-                        this._renderQueues[k].insertRenderPass(ro, l, j)
-
+                      
                         // if (castShadow || receiveShadow) {
-                            // @ts-ignore
-                            if (!pass.binded_sl_lit_shadow_shadowStage) {
-                                if (pass.getBinding('sl_litShadowMatViewProj') !== undefined) {
-                                    pass.bindBuffer(UBOLitShadow.BLOCK.binding, buffer);
-                                    updated = true;
-                                    // @ts-ignore
-                                    pass.binded_sl_lit_shadow_shadowStage = true;
-                                }
+                        // @ts-ignore
+                        if (!pass.binded_sl_lit_shadow_shadowStage) {
+                            if (pass.getBinding('sl_litShadowMatViewProj') !== undefined) {
+                                pass.bindBuffer(UBOLitShadow.BLOCK.binding, buffer);
+                                updated = true;
+                                // @ts-ignore
+                                pass.binded_sl_lit_shadow_shadowStage = true;
                             }
+                        }
                         // }
 
                         // if (receiveShadow) {
-                            // @ts-ignore
-                            if (!pass.binded_sl_shadowMap_shadowStage) {
-                                let sampler = pass.getBinding('sl_shadowMap');
-                                if (sampler) {
-                                    pass.bindTextureView(sampler, shadowMap);
-                                    updated = true;
-                                    // @ts-ignore
-                                    pass.binded_sl_shadowMap_shadowStage = true;
-                                }
+                        // @ts-ignore
+                        if (!pass.binded_sl_shadowMap_shadowStage) {
+                            let sampler = pass.getBinding('sl_shadowMap');
+                            if (sampler) {
+                                pass.bindTextureView(sampler, shadowMap);
+                                updated = true;
+                                // @ts-ignore
+                                pass.binded_sl_shadowMap_shadowStage = true;
                             }
+                        }
                         // }
 
 
@@ -162,13 +168,15 @@ export class ShadowMapStage extends RenderStage {
         let farClip = 1000;
 
         let mainLight = camera.scene.mainLight;
-        let matViewProj = _computeDirectionalLightViewProjMatrix(mainLight, nearClip, farClip);
+        // let matViewProj = _computeDirectionalLightViewProjMatrix(mainLight, nearClip, farClip);
+        let matViewProj = cc.find('Main Light/Camera').getComponent(CameraComponent).camera.matViewProj;
 
         Mat4.toArray(fv, matViewProj, UBOLitShadow.LIT_SHADOW_MAT_VIEW_PROJ_OFFSET);
 
         fv[UBOLitShadow.LIT_SHADOW_PARAMS] = nearClip;
         fv[UBOLitShadow.LIT_SHADOW_PARAMS + 1] = farClip;
-        fv[UBOLitShadow.LIT_SHADOW_PARAMS + 2] = 0;
+        fv[UBOLitShadow.LIT_SHADOW_PARAMS + 2] = this._shadowComponent.shadowBias;
+        fv[UBOLitShadow.LIT_SHADOW_PARAMS + 3] = this._shadowComponent.shadowDarkness;
 
         uboBinding.buffer!.update(fv);
     }
@@ -188,6 +196,7 @@ export class ShadowMapStage extends RenderStage {
             return false;
         }
 
+        this._shadowComponent = shadow;
         return true;
     }
 

@@ -5,7 +5,7 @@ precision highp float;
 
 layout(binding = 0) uniform SL_LIT_SHADOW {
   highp mat4 sl_litShadowMatViewProj; // view matrix
-  highp vec4 sl_litShadowParams; // near, far, depth bias
+  highp vec4 sl_litShadowParams; // near, far, depth bias, darkness
 };
 
 out float v_depth;
@@ -23,7 +23,7 @@ vec4 vert () {
   CCGetWorldMatrixFull(matWorld, matWorldIT);
 
   vec4 pos = sl_litShadowMatViewProj * matWorld * In.position;
-  v_depth = (pos.z + sl_litShadowParams.x) / (sl_litShadowParams.x + sl_litShadowParams.y);
+  v_depth = (pos.z + sl_litShadowParams.x) / (sl_litShadowParams.x + sl_litShadowParams.y) + 0.005;
   
   #if USE_ALBEDO_MAP
   vTexCoord = a_texCoord;

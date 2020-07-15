@@ -10,6 +10,11 @@ export class ShadowComponent extends Component {
     // @property
     // serializableDummy = 0;
 
+    @property
+    shadowBias = 0.0005;
+    @property
+    shadowDarkness = 0.5;
+
     start () {
         // Your initialization goes here.
     }
