@@ -6,20 +6,6 @@ import { ShadowMapStage } from "./shadow-map-stage";
 
 const { ccclass, property } = _decorator;
 
-const _colors: IGFXColor[] = [{ r: 1, g: 1, b: 1, a: 1 }];
-const _bufs: GFXCommandBuffer[] = [];
-
-type DepthBufferBinding = {
-    type: GFXBindingType,
-    blockInfo: GFXUniformBlock,
-    buffer: GFXBuffer,
-    ubo: UBOLitShadow,
-}
-
-type DpethBuffer = {
-    buffer: GFXFramebuffer,
-    binding: DepthBufferBinding
-}
 
 // TODO: only support bind one depth buffer now.
 @ccclass("DepthBufferStage")

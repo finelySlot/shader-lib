@@ -177,15 +177,14 @@ export class ShadowMapStage extends RenderStage {
         const camera = view.camera!;
 
         // @ts-ignore
-        if (!CC_EDITOR) {
-            let light = camera.scene.mainLight;
-            if (!light) return false;
-            let shadow = light.node.getComponent(ShadowComponent);
-            if (!shadow || !shadow.enabledInHierarchy) {
-                return false;
-            }
+        if (CC_EDITOR && view.name !== "Editor Camera") {
+            return false;
         }
-        else if (view.name !== "Editor Camera") {
+
+        let light = camera.scene.mainLight;
+        if (!light) return false;
+        let shadow = light.node.getComponent(ShadowComponent);
+        if (!shadow || !shadow.enabledInHierarchy) {
             return false;
         }
 
