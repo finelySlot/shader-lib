@@ -23,12 +23,8 @@ vec4 vert () {
   CCGetWorldMatrixFull(matWorld, matWorldIT);
 
   vec4 pos = sl_litShadowMatViewProj * matWorld * In.position;
-  #if USE_FLOAT_TEXTURE
-    v_depth = pos.z;
-  #else
-    v_depth = pos.z / 10000.;
-  #endif
-
+  v_depth = (pos.z + sl_litShadowParams.x) / (sl_litShadowParams.x + sl_litShadowParams.y);
+  
   #if USE_ALBEDO_MAP
   vTexCoord = a_texCoord;
   #endif

@@ -1,7 +1,8 @@
 import { _decorator, Component, Node, RenderStage, RenderFlow, RenderView, renderer, GFXClearFlag, GFXPipelineState, GFXCommandBuffer, GFXTextureType, GFXTextureUsageBit, GFXTextureViewType, GFXFormat, Vec2, GFXFramebuffer, GFXTexture, GFXTextureView, pipeline, game, director, Director, IGFXColor, Mat4, CameraComponent, GFXBindingType, GFXBufferUsageBit, GFXMemoryUsageBit, GFXUniformBlock, GFXBuffer } from "cc";
 import { createFrameBuffer } from "../utils/frame-buffer";
 import { DepthBufferComponent } from "./depth-buffer-component";
-import { UBOLitShadow } from "./depth-buffer-ubo";
+import { UBOLitShadow } from "./shadow-map-ubo";
+import { ShadowMapStage } from "./shadow-map-stage";
 
 const { ccclass, property } = _decorator;
 
@@ -22,64 +23,45 @@ type DpethBuffer = {
 
 // TODO: only support bind one depth buffer now.
 @ccclass("DepthBufferStage")
-export class DepthBufferStage extends RenderStage {
-
-    _psos: GFXPipelineState[] = []
-
-    _currentUboBinding: DepthBufferBinding = null;
-    _currentDepthBuffer: GFXFramebuffer = null;
-    _depthBuffers: Map<RenderView, DpethBuffer> = new Map();
-
-    public activate (flow: RenderFlow) {
-        super.activate(flow);
-        this.createCmdBuffer();
-    }
-
-    /**
-     * @zh
-     * 销毁函数。
-     */
-    public destroy () {
-        if (this._cmdBuff) {
-            this._cmdBuff.destroy();
-            this._cmdBuff = null;
-        }
-    }
+export class DepthBufferStage extends ShadowMapStage {
 
     public sortRenderQueue () {
-        let depthTexture = this._currentDepthBuffer.colorViews[0];
+        let shadowMap = this._shadowMap.buffer.colorViews[0];
+        let buffer = this._shadowMap.binding.buffer;
 
         this._renderQueues.forEach(this.renderQueueClearFunc);
         const renderObjects = this._pipeline.renderObjects;
         for (let i = 0; i < renderObjects.length; ++i) {
             const ro = renderObjects[i];
             for (let l = 0; l < ro.model.subModelNum; l++) {
-                for (let j = 0; j < ro.model.getSubModel(l).passes.length; j++) {
+                let passes = ro.model.getSubModel(l).passes;
+                for (let j = 0; j < passes.length; j++) {
                     for (let k = 0; k < this._renderQueues.length; k++) {
                         let updated = false;
 
                         const subModel = ro.model.getSubModel(l);
                         const pass: renderer.Pass = subModel.passes[j];
 
-                        if (this._renderQueues[k].insertRenderPass(ro, l, j)) {
-                            // @ts-ignore
-                            if (!pass.binded_sl_lit_shadow) {
-                                pass.bindBuffer(UBOLitShadow.BLOCK.binding, this._currentUboBinding.buffer);
+                        this._renderQueues[k].insertRenderPass(ro, l, j)
+
+                        // @ts-ignore
+                        if (!pass.binded_sl_lit_shadow) {
+                            if (pass.getBinding('sl_litShadowMatViewProj') !== undefined) {
+                                pass.bindBuffer(UBOLitShadow.BLOCK.binding, buffer);
                                 updated = true;
                                 // @ts-ignore
                                 pass.binded_sl_lit_shadow = true;
                             }
                         }
 
-
                         // @ts-ignore
-                        if (!pass.binded_sl_depthTexture) {
+                        if (!pass.binded_sl_shadowMap) {
                             let sampler = pass.getBinding('sl_depthTexture');
                             if (sampler) {
-                                pass.bindTextureView(sampler, depthTexture);
+                                pass.bindTextureView(sampler, shadowMap);
                                 updated = true;
                                 // @ts-ignore
-                                pass.binded_sl_depthTexture = true;
+                                pass.binded_sl_shadowMap = true;
                             }
                         }
 
@@ -94,38 +76,8 @@ export class DepthBufferStage extends RenderStage {
         this._renderQueues.forEach(this.renderQueueSortFunc);
     }
 
-    switchDepthBuffer (view) {
-        let depthBuffer = this._depthBuffers.get(view);
-        if (!depthBuffer) {
-            const buffer = this.pipeline.device.createBuffer({
-                usage: GFXBufferUsageBit.UNIFORM | GFXBufferUsageBit.TRANSFER_DST,
-                memUsage: GFXMemoryUsageBit.HOST | GFXMemoryUsageBit.DEVICE,
-                size: UBOLitShadow.SIZE,
-            });
-
-            let uboLitShadow = new UBOLitShadow();
-
-            let uboBinding = {
-                type: GFXBindingType.UNIFORM_BUFFER,
-                blockInfo: UBOLitShadow.BLOCK,
-                buffer: buffer,
-                ubo: uboLitShadow,
-            };
-
-            depthBuffer = {
-                buffer: createFrameBuffer(this._pipeline, this._device, true),
-                binding: uboBinding
-            }
-
-            this._depthBuffers.set(view, depthBuffer);
-        }
-
-        this._currentUboBinding = depthBuffer.binding;
-        this._currentDepthBuffer = depthBuffer.buffer;
-    }
-
-    updateCameraMatToUBO (camera: renderer.Camera) {
-        let uboBinding = this._currentUboBinding;
+    updateUBO (camera: renderer.Camera) {
+        let uboBinding = this._shadowMap.binding;
         const fv = uboBinding.ubo.view;
 
         Mat4.toArray(fv, camera.matViewProj, UBOLitShadow.LIT_SHADOW_MAT_VIEW_PROJ_OFFSET);
@@ -137,58 +89,20 @@ export class DepthBufferStage extends RenderStage {
         uboBinding.buffer!.update(fv);
     }
 
-    render (view: RenderView) {
+    checkView (view) {
         const camera = view.camera!;
+
         // @ts-ignore
         if (!CC_EDITOR) {
             let depthComponent = camera.node.getComponent(DepthBufferComponent);
             if (!depthComponent || !depthComponent.enabled) {
-                return;
+                return false;
             }
         }
         else if (view.name !== "Editor Camera") {
-            return;
+            return false;
         }
 
-        this.switchDepthBuffer(view);
-        this.updateCameraMatToUBO(camera);
-        this.sortRenderQueue();
-
-        let cmdBuff = this._cmdBuff;
-        cmdBuff.begin();
-
-        const vp = camera.viewport;
-        this._renderArea!.x = vp.x * camera.width;
-        this._renderArea!.y = vp.y * camera.height;
-
-
-        let framebuffer = this._currentDepthBuffer;
-        this._renderArea!.width = camera.width;
-        this._renderArea!.height = camera.height;
-
-        cmdBuff.beginRenderPass(framebuffer, this._renderArea!,
-            camera.clearFlag, _colors, camera.clearDepth, camera.clearStencil);
-
-        for (let i = 0; i < this._renderQueues.length; i++) {
-            cmdBuff.execute(this._renderQueues[i].cmdBuffs.array, this._renderQueues[i].cmdBuffCount);
-        }
-
-        cmdBuff.endRenderPass();
-
-        cmdBuff.end();
-
-        _bufs.length = 0;
-        _bufs[0] = cmdBuff;
-        this._device!.queue.submit(_bufs);
-    }
-
-    resize (width: number, height: number) {
-        this.rebuild();
-    }
-    rebuild () {
-        for (let values of this._depthBuffers) {
-            values[1].buffer.destroy()
-        }
-        this._depthBuffers.clear();
+        return true;
     }
 }

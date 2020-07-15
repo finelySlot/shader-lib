@@ -108,6 +108,12 @@ CCProgram standard-vs %{
     out vec2 v_luv;
   #endif
 
+  #if USE_SHADOW
+  #include <./chunks/lit-shadow>
+  out vec4 v_posLightSpace;
+  out float v_depth;
+  #endif
+
   vec4 vert () {
     StandardVertInput In;
     CCVertInput(In);
@@ -136,7 +142,12 @@ CCProgram standard-vs %{
       v_luv = cc_lightingMapUVParam.xy + a_texCoord1 * cc_lightingMapUVParam.zw;
     #endif
 
-    return cc_matProj * (cc_matView * matWorld) * In.position;
+    #if USE_SHADOW
+      v_posLightSpace = sl_litShadowMatViewProj * vec4(pos.xyz, 1.);
+      v_depth = (v_posLightSpace.z + sl_litShadowParams.x) / (sl_litShadowParams.x + sl_litShadowParams.y);
+    #endif
+
+    return cc_matProj * cc_matView * pos;
   }
 }%
 
@@ -249,6 +260,32 @@ CCProgram standard-fs %{
     #endif
   }
 
+  #if USE_SHADOW
+    #include <./chunks/packing>
+
+    in vec4 v_posLightSpace;
+    in float v_depth;
+
+    uniform sampler2D sl_shadowMap;
+
+    float getDepth(sampler2D shadowMap, vec2 shadowUV) {
+      return unpackRGBAToDepth(texture(shadowMap, shadowUV));
+    }
+
+    float computeFallOff(float shadow, vec2 coords, float frustumEdgeFalloff) {
+      // float mask = smoothstep(1.0 - frustumEdgeFalloff, 1.0, clamp(dot(coords, coords), 0.0, 1.0));
+      // return mix(esm, 1.0, mask);
+      return shadow;
+    }
+
+    // standard hard shadow
+    float shadowSimple(sampler2D shadowMap, vec2 shadowUV, float currentDepth, float darkness) {
+      float closestDepth = getDepth(shadowMap, shadowUV);
+      return currentDepth > closestDepth  ? 1.0 - darkness : 1.0;
+    }
+
+  #endif
+
   vec4 frag () {
     StandardSurface s; surf(s);
     vec4 color = CCStandardShading(s);
@@ -265,6 +302,18 @@ CCProgram standard-fs %{
       finalColor += s.emissive;
 
       color.rgb = lighting.a * finalColor + (1.0 - lighting.a) * color.rgb;
+    #endif
+
+    #if USE_SHADOW
+      vec2 shadowUv = (v_posLightSpace.xy / v_posLightSpace.w) * 0.5 + 0.5;
+      float shadowDepth = unpackRGBAToDepth(texture(sl_shadowMap, shadowUv));
+      float currentDepth = clamp(v_depth, 0.0, 1.0);
+      // color.rgb *= shadowSimple(sl_shadowMap, shadowUv, currentDepth, 0.5);
+
+      color.rgb *= shadowDepth;
+
+      // color.rgb *= currentDepth;
+      // color.rgb = vec3(currentDepth);
     #endif
 
     return CCFragOutput(color);

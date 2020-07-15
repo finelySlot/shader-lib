@@ -24,9 +24,5 @@ vec4 frag () {
       #endif
   #endif
 
-  #if USE_FLOAT_TEXTURE
-    return vec4(v_depth);
-  #else
-    return packDepthToRGBA(v_depth);
-  #endif
+  return packDepthToRGBA(v_depth);
 }

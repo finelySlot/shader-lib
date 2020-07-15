@@ -176,7 +176,7 @@ CCProgram standard-vs %{
     #endif
 
     v_position = worldPos.xyz;
-    v_projPos = cc_matProj * cc_matView * worldPos;
+    v_projPos = cc_matViewProj * worldPos;
 
     #if !USE_WAVE
       v_normal = normalize((matWorldIT * vec4(In.normal, 0.0)).xyz);
@@ -205,6 +205,7 @@ CCProgram standard-fs %{
   #include <shared-ubos>
 
   #include <../shaders/chunks/packing>
+  #include <../shaders/chunks/lit-shadow>
 
   in vec3 v_position;
   in vec4 v_projPos;
@@ -333,11 +334,8 @@ CCProgram standard-fs %{
 
     // depth
     vec2 depthUv = (v_projPos.xy / v_projPos.w) * 0.5 + 0.5;
-    #if USE_FLOAT_TEXTURE
-      float sceneDepth = texture(sl_depthTexture, depthUv).r;
-    #else
-      float sceneDepth = unpackRGBAToDepth(texture(sl_depthTexture, depthUv)) * 10000.;
-    #endif
+    float sceneDepth = unpackRGBAToDepth(texture(sl_depthTexture, depthUv));
+    sceneDepth = sceneDepth * (sl_litShadowParams.x + sl_litShadowParams.y) - sl_litShadowParams.x;
     float waterDepth = v_projPos.z;
     float depth = clamp((sceneDepth - waterDepth) / depthDistance, 0., 1.);
     baseColor += mix(shallowColor, deepColor, depth);
